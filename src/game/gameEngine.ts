@@ -164,17 +164,19 @@ export function executeEvolveMonsterCardFromHand(
   );
 
   const evoCardIndex = ps.hand.findIndex((c) => c.instanceId === evoInstanceId);
-  if (evoCardIndex === -1) throw new Error("Carta não encontrada");
-
-  const preEvoCardIndex = ps.hand.findIndex(
-    (c) => c.instanceId === evoInstanceId,
-  );
-  if (preEvoCardIndex === -1) throw new Error("Carta não encontrada");
+  if (evoCardIndex === -1) throw new Error("Evolução não encontrada");
 
   const cardInHand = ps.hand[evoCardIndex];
   const cardInBattleOrMain = findPreEvoOnField(preEvoInstanceId, ps);
 
   if (!cardInBattleOrMain) throw new Error("Carta não está no campo. ");
+
+  const { preEvoCard, zone } = cardInBattleOrMain;
+
+  const preEvoCardIndex = ps[zone].findIndex(
+    (c) => c.instanceId === preEvoInstanceId,
+  );
+  if (preEvoCardIndex === -1) throw new Error("Pre-evo não encontrada");
 
   const evoTemplate = getTemplateOrThrow(cardInHand.templateId);
   const preEvoTemplate = getTemplateOrThrow(
@@ -208,17 +210,16 @@ export function executeEvolveMonsterCardFromHand(
     if (isCardOnTerrain) isCardOnTerrain.exhausted = true;
   });
 
-  const { preEvoCard, zone } = cardInBattleOrMain;
-
   ps.hand.splice(evoCardIndex, 1);
   cardInHand.canAttack = preEvoCard.canAttack;
   cardInHand.exhausted = preEvoCard.exhausted;
   cardInHand.attached = cardInHand.attached
     ? [...cardInHand.attached, preEvoCard]
     : [preEvoCard];
-
   ps[zone].splice(preEvoCardIndex, 1);
   ps[zone].push(cardInHand);
+
+  console.log("zona após evoluir: ", ps[zone]);
 
   const drawCard = ps.deck.splice(0, 1);
   ps.hand.push(...drawCard);
