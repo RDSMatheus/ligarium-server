@@ -57,12 +57,3 @@ src/
 ```
 
 ---
-
-## 🔮 Próximos passos (Day 2+)
-
-- Deck de 50 cartas embaralhado
-- 4 terrenos por jogador (sistema de vida)
-- Mão inicial de 5 cartas
-- Fases de turno: Refresh → Draw → Farm → Main → Battle → End
-- Sistema de combate com dano simultâneo
-- Tipos de carta: Terrain, Monster, Egg, Spell

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --exit-child --transpile-only src/server.ts",
     "build": "tsc -p .",
-    "start": "node dist/server.js"
+    "start": "tsc -p . node dist/server.js"
   },
   "license": "MIT",
   "dependencies": {
