@@ -1,3 +1,5 @@
+import { EffectTrigger, TargetCondition } from "./data/cardDatabase";
+
 export type ID = string;
 
 export type RoomState = "waiting" | "in_game" | "finished";
@@ -105,8 +107,9 @@ export interface StackEntry {
   id: string;
   sourceInstanceId: string; // qual carta gerou
   ownerId: string; // qual jogador ativou
-  trigger: string; // "attacking", "played", etc.
+  trigger: EffectTrigger; // "attacking", "played", etc.
   effectSpeed: EffectSpeed; // "trigger" ou "fast"
+  targetFilter?: TargetCondition;
   interaction?: boolean; // se true, permite resposta ANTES da resolução
   params?: Record<string, any>; // dados extras (ex: targetId)
   resolved: boolean;
@@ -120,8 +123,19 @@ export interface ChainState {
   awaitingInteraction: boolean; // aguardando resposta de interação
 }
 
+export type BattleStep =
+  | "declare" // ataque declarado, abre janela on_attack_declared
+  | "attacking" // [attacking] triggers do atacante
+  | "attacked" // [attacked] triggers do defensor (se houver alvo)
+  | "blocking" // janela de bloqueio
+  | "battling" // [battling] de ambos os lados
+  | "damage" // resolução do dano
+  | "after_attacking" // [after_attacking]
+  | "after_attacked" // [after_attacked]
+  | "cleanup"; // limpeza final
+
 export interface BattleState {
-  step: "declare" | "response" | "damage" | "cleanup";
+  step: BattleStep;
   attackerPlayerId: string;
   attackerInstanceId: string;
   targetInstanceId: string | null; // null = ataque direto
@@ -129,44 +143,47 @@ export interface BattleState {
   damageModifiers: { targetInstanceId: string; value: number }[];
 }
 
-type EffectTrigger =
-  // ── Batalha ──────────────────────────────
-  | "attacking" // quando este monstro declara ataque
-  | "attacked" // quando este monstro é atacado
-  | "blocking" // quando este monstro bloqueia
-  | "blocked" // quando este monstro é bloqueado
-  | "battling" // quando este monstro entra em combate
-  | "after_attacking" // após o combate, se este monstro atacou
-  | "after_attacked" // após o combate, se este monstro foi atacado
-  // ── Movimento / Estado ───────────────────
-  | "when_exhausted" // quando este monstro exausta
-  | "when_moved" // quando este monstro se move de zona
-  | "when_played" // quando esta carta é jogada da mão
-  | "when_destroyed" // quando esta carta é destruída
-  | "when_returned" // quando esta carta volta para a mão
-  // ── Keywords ─────────────────────────────
-  | "rampage" // dano excedente vai para o jogador
-  | "parry" // cancela o primeiro dano recebido
-  | "barricade" // protege monstros atrás dele
-  | "armor" // reduz dano recebido por valor fixo
-  | "strike" // causa dano antes do oponente
-  | "counter" // causa dano após o oponente
-  | "push" // empurra monstro derrotado para a mão
-  | "taunt" // força o oponente a atacar este monstro
-  // ── Passivo ──────────────────────────────
-  | "passive" // efeito contínuo, não vai para a stack
-  | "continuous" // igual a passive
-  | "farm"; // efeito ativo enquanto no farm
+// type EffectTrigger =
+//   // ── Batalha ──────────────────────────────
+//   | "attacking" // quando este monstro declara ataque
+//   | "attacked" // quando este monstro é atacado
+//   | "blocking" // quando este monstro bloqueia
+//   | "blocked" // quando este monstro é bloqueado
+//   | "battling" // quando este monstro entra em combate
+//   | "after_attacking" // após o combate, se este monstro atacou
+//   | "after_attacked" // após o combate, se este monstro foi atacado
+//   // ── Movimento / Estado ───────────────────
+//   | "when_exhausted" // quando este monstro exausta
+//   | "when_moved" // quando este monstro se move de zona
+//   | "when_played" // quando esta carta é jogada da mão
+//   | "when_destroyed" // quando esta carta é destruída
+//   | "when_returned" // quando esta carta volta para a mão
+//   // ── Keywords ─────────────────────────────
+//   | "rampage" // dano excedente vai para o jogador
+//   | "parry" // cancela o primeiro dano recebido
+//   | "barricade" // protege monstros atrás dele
+//   | "armor" // reduz dano recebido por valor fixo
+//   | "strike" // causa dano antes do oponente
+//   | "counter" // causa dano após o oponente
+//   | "push" // empurra monstro derrotado para a mão
+//   | "taunt" // força o oponente a atacar este monstro
+//   // ── Passivo ──────────────────────────────
+//   | "passive" // efeito contínuo, não vai para a stack
+//   | "continuous" // igual a passive
+//   | "farm"; // efeito ativo enquanto no farm
 
-type EffectTarget =
-  | "self" // a própria carta
-  | "opponent_monster" // monstro do oponente (requer seleção)
-  | "opponent_farm_card" // carta do farm do oponente (requer seleção)
-  | "opponent_farm_exhausted" // carta exausta do farm do oponente (requer seleção)
-  | "any_monster" // qualquer monstro em jogo (requer seleção)
-  | "all_opponent_monsters" // todos os monstros do oponente (sem seleção)
-  | "all_friendly_monsters" // todos os próprios monstros (sem seleção)
-  | "none"; // sem alvo (efeito não precisa de alvo)
+export type EffectTarget =
+  | "opponent_farm"
+  | "own_farm"
+  | "opponent_battle"
+  | "own_battle"
+  | "opponent_hand"
+  | "own_hand"
+  | "opponent_main"
+  | "own_main"
+  | "opponent_trash"
+  | "own_trash"
+  | "any"; // sem alvo (efeito não precisa de alvo)
 
 type EffectCondition =
   | "while_exhausted" // só ativo enquanto exausto
@@ -233,8 +250,10 @@ interface HpModifier {
 export interface PendingOptionalEffect {
   sourceInstanceId: string; // qual carta gerou o efeito
   ownerId: string; // qual jogador decide se ativa
-  trigger: string; // "played", "attacked", "end_of_turn"...
+  trigger: EffectTrigger; // "played", "attacked", "end_of_turn"...
   effectSpeed: EffectSpeed;
+  targetZone?: EffectTarget[] | null;
+  targetFilter?: TargetCondition;
   action: string; // chave do EFFECT_HANDLERS
   requiresTarget: boolean; // precisa escolher alvo antes de ativar?
   params?: Record<string, any>; // dados extras (value, targetId...)

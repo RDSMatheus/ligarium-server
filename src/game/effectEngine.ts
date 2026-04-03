@@ -1,4 +1,9 @@
-import { CardEffect, CardTemplate, getTemplateOrThrow } from "./data/cardDatabase";
+import {
+  CardEffect,
+  CardTemplate,
+  EffectTrigger,
+  getTemplateOrThrow,
+} from "./data/cardDatabase";
 import {
   CardInstance,
   EffectSpeed,
@@ -6,6 +11,7 @@ import {
   FastTimingWindow,
   FastType,
   GameState,
+  PlayerState,
   StackEntry,
 } from "./gameTypes";
 import { getPlayerState, getOpponentState } from "./turnManager";
@@ -20,11 +26,11 @@ import { getPlayerState, getOpponentState } from "./turnManager";
  */
 export function collectTriggerEffects(
   card: CardTemplate,
-  trigger: string,
+  trigger: EffectTrigger,
 ): CardEffect[] {
   return (
     card.effects?.filter(
-      (e) => e.speed === "trigger" && e.trigger === trigger,
+      (e) => e.speed === "trigger" && e.trigger.includes(trigger),
     ) ?? []
   );
 }
@@ -32,6 +38,18 @@ export function collectTriggerEffects(
 /** Atalho: retorna efeitos trigger do tipo "played" */
 export function playedEffects(card: CardTemplate): CardEffect[] {
   return collectTriggerEffects(card, "played");
+}
+
+export function attackingEffects(card: CardTemplate): CardEffect[] {
+  return collectTriggerEffects(card, "attacking");
+}
+
+export function attackedEffects(card: CardTemplate): CardEffect[] {
+  return collectTriggerEffects(card, "attacked");
+}
+
+export function evolvingEffects(card: CardTemplate): CardEffect[] {
+  return collectTriggerEffects(card, "evolving");
 }
 
 /** Atalho: retorna o primeiro efeito "played" ou null */
@@ -201,7 +219,7 @@ export function closeEffectWindow(state: GameState): void {
  */
 export function processGameEvent(
   state: GameState,
-  trigger: string,
+  trigger: EffectTrigger,
   triggerPlayerId: string,
   sourceInstanceId?: string,
   context?: Record<string, any>,
@@ -230,10 +248,13 @@ export function processGameEvent(
       for (const effect of effects) {
         if (!checkEffectCondition(state, ps.playerId, card, effect)) continue;
 
+        if (!hasLegalTargets(effect, state, ps.playerId)) continue;
+
         triggerEntries.push({
           id: "", // será preenchido pelo chamador
           sourceInstanceId: card.instanceId,
           ownerId: ps.playerId,
+          targetFilter: effect.targetFilter,
           trigger,
           effectSpeed: "trigger",
           params: { value: effect.value, ...context },
@@ -244,7 +265,13 @@ export function processGameEvent(
   }
 
   // 2. Abre janela de efeito
-  openEffectWindow(state, windowType, triggerPlayerId, sourceInstanceId, context);
+  openEffectWindow(
+    state,
+    windowType,
+    triggerPlayerId,
+    sourceInstanceId,
+    context,
+  );
 
   // 3. Verifica se o oponente tem efeitos de interação
   const opp = getOpponentState(state, triggerPlayerId);
@@ -308,4 +335,55 @@ function checkEffectCondition(
     default:
       return true;
   }
+}
+
+export function hasLegalTargets(
+  effect: CardEffect,
+  state: GameState,
+  ownerId: string,
+): boolean {
+  if (!effect.requiresTarget) return true;
+
+  const ps = getPlayerState(state, ownerId);
+  const oppState = getOpponentState(state, ownerId);
+
+  const zonesObj = {
+    opponent_farm: oppState.farm,
+    own_farm: ps.farm,
+    opponent_battle: oppState.battleZone,
+    own_battle: ps.battleZone,
+    opponent_hand: oppState.hand,
+    own_hand: ps.hand,
+    opponent_main: oppState.mainZone,
+    own_main: ps.mainZone,
+    opponent_trash: oppState.trash,
+    own_trash: ps.trash,
+    any: [
+      ...oppState.farm,
+      ...ps.farm,
+      ...oppState.battleZone,
+      ...ps.battleZone,
+      ...oppState.hand,
+      ...ps.hand,
+      ...oppState.mainZone,
+      ...oppState.trash,
+      ...ps.trash,
+    ],
+  };
+
+  const zones = effect.targetZones;
+
+  if (!zones) return false;
+
+  zones.forEach((zone) =>
+    zonesObj[zone].some((c) => {
+      if (!c) return false;
+      const f = effect.targetFilter ?? "any";
+      if (f === "any") return true;
+      if (f === "exhausted") return !!c.exhausted;
+      if (f === "active") return !c.exhausted && !c.lockedUntilEndOfTurn;
+    }),
+  );
+
+  return false;
 }
