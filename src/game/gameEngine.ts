@@ -6,7 +6,7 @@ import {
   CardInstance,
 } from "./gameTypes";
 import { getTemplateOrThrow } from "./data/cardDatabase";
-import { playedEffects } from "./effectEngine";
+import { evolvingEffects, playedEffects } from "./effectEngine";
 import { executeEffect } from "./effects/index";
 import { generateId } from "../utils/ids";
 import { isPlayerTurn, getPlayerState } from "./turnManager";
@@ -120,7 +120,9 @@ export function executePlayMonsterCardFromHand(
         action: effect.action,
         ownerId: playerId,
         effectSpeed: effect.speed,
-        requiresTarget: false,
+        targetFilter: effect.targetFilter,
+        targetZone: effect.targetZones ? effect.targetZones : null,
+        requiresTarget: effect.requiresTarget,
         sourceInstanceId: cardInHand.instanceId,
         trigger: "played",
         params: {
@@ -162,6 +164,10 @@ export function executeEvolveMonsterCardFromHand(
     "mão do jogador:",
     ps.hand.map((c) => c.instanceId),
   );
+
+  const monsterCap = isMaxMonstersCap(ps);
+
+  if (monsterCap) throw new Error("Número máximo de monstros em campo");
 
   const evoCardIndex = ps.hand.findIndex((c) => c.instanceId === evoInstanceId);
   if (evoCardIndex === -1) throw new Error("Evolução não encontrada");
@@ -224,18 +230,20 @@ export function executeEvolveMonsterCardFromHand(
   const drawCard = ps.deck.splice(0, 1);
   ps.hand.push(...drawCard);
 
-  const onPlayEffects = playedEffects(evoTemplate);
+  const onEvolvingEffects = evolvingEffects(evoTemplate);
 
-  if (onPlayEffects.length === 0) return;
+  if (onEvolvingEffects.length === 0) return;
 
-  for (const effect of onPlayEffects) {
+  for (const effect of onEvolvingEffects) {
     if (effect.optional) {
       state.pendingOptionalEffects ??= [];
       state.pendingOptionalEffects.push({
         action: effect.action,
         ownerId: playerId,
         effectSpeed: effect.speed,
-        requiresTarget: false,
+        targetZone: effect.targetZones ? effect.targetZones : null,
+        requiresTarget: effect.requiresTarget,
+        targetFilter: effect.targetFilter,
         sourceInstanceId: cardInHand.instanceId,
         trigger: "played",
         params: {
@@ -270,6 +278,10 @@ export function executePlayMonsterCardFromFarm(
     throw new Error("Você só pode realizar essa ação na main phase.");
 
   const ps = getPlayerState(state, playerId);
+
+  const monsterCap = isMaxMonstersCap(ps);
+
+  if (monsterCap) throw new Error("Número máximo de monstros em campo");
 
   console.log("cardInstanceId recebido:", cardInstanceId);
   console.log(
@@ -323,8 +335,10 @@ export function executePlayMonsterCardFromFarm(
       state.pendingOptionalEffects.push({
         action: effect.action,
         ownerId: playerId,
-        requiresTarget: false,
         effectSpeed: effect.speed,
+        targetZone: effect.targetZones ? effect.targetZones : null,
+        targetFilter: effect.targetFilter,
+        requiresTarget: effect.requiresTarget,
         sourceInstanceId: cardInFarm.instanceId,
         trigger: "played",
         params: {
@@ -387,4 +401,10 @@ function findPreEvoOnField(
   }
 
   return null;
+}
+
+function isMaxMonstersCap(ps: PlayerState) {
+  const max = [...ps.battleZone, ...ps.battleZone];
+  if ((max.length = 4)) return true;
+  return false;
 }

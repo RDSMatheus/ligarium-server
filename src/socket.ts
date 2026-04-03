@@ -19,6 +19,7 @@ import {
   endTurn,
   executeDrawPhase,
   executeRefreshPhase,
+  getOpponentState,
 } from "./game/turnManager";
 import {
   executeFarmAction,
@@ -28,10 +29,13 @@ import {
   executeMoveMonsterToBattle,
 } from "./game/gameEngine";
 import {
+  attacked,
   cleanupBattle,
   declareAttack,
   declareBlock,
+  hasAttackedEffects,
   resolveCombatDamage,
+  skipAttacked,
   skipBlocking,
 } from "./game/battleEngine";
 
@@ -327,6 +331,33 @@ export function registerSocket(io: Server): void {
       },
     );
 
+    socket.on("action:skip_farm", (data: { gameId: string }) => {
+      const room = getRoom(data.gameId);
+      if (!room || !room.gameState) {
+        socket.emit("error", { message: "Jogo não iniciado." });
+        return;
+      }
+
+      const state = room.gameState;
+      const playerId = findPlayerIdBySocket(room, socket.id);
+      if (!playerId) {
+        socket.emit("error", { message: "Jogador não encontrado." });
+        return;
+      }
+
+      if (state.currentPhase !== "farm") {
+        return;
+      }
+
+      try {
+        advancePhase(state);
+        io.to(data.gameId).emit("game:update", state);
+        return;
+      } catch (err: any) {
+        socket.emit("error", { message: err.message });
+      }
+    });
+
     socket.on(
       "action:play_monster_from_hand",
       (data: {
@@ -356,20 +387,7 @@ export function registerSocket(io: Server): void {
             exaustedIds,
           );
           console.log("monstro invocado: ", room.gameState);
-
-          // Notifica o dono se houver efeitos opcionais pendentes
-          const pending = room.gameState.pendingOptionalEffects;
-          if (pending && pending.length > 0) {
-            const first = pending[0];
-            const ownerSocketId = room.players.find(
-              (p) => p.playerId === first.ownerId,
-            )?.socketId;
-            if (ownerSocketId) {
-              io.to(ownerSocketId).emit("game:pending_optional_effect", {
-                effect: first,
-              });
-            }
-          }
+          notifyPendingEffect(room, io);
 
           io.to(gameId).emit("game:update", room.gameState);
         } catch (error: any) {
@@ -410,20 +428,7 @@ export function registerSocket(io: Server): void {
             exaustedIds,
           );
           console.log("monstro invocado: ", room.gameState);
-
-          // Notifica o dono se houver efeitos opcionais pendentes
-          const pending = room.gameState.pendingOptionalEffects;
-          if (pending && pending.length > 0) {
-            const first = pending[0];
-            const ownerSocketId = room.players.find(
-              (p) => p.playerId === first.ownerId,
-            )?.socketId;
-            if (ownerSocketId) {
-              io.to(ownerSocketId).emit("game:pending_optional_effect", {
-                effect: first,
-              });
-            }
-          }
+          notifyPendingEffect(room, io);
 
           io.to(gameId).emit("game:update", room.gameState);
         } catch (error: any) {
@@ -462,20 +467,7 @@ export function registerSocket(io: Server): void {
             exaustedIds,
           );
           console.log("monstro invocado: ", room.gameState);
-
-          // Notifica o dono se houver efeitos opcionais pendentes
-          const pending = room.gameState.pendingOptionalEffects;
-          if (pending && pending.length > 0) {
-            const first = pending[0];
-            const ownerSocketId = room.players.find(
-              (p) => p.playerId === first.ownerId,
-            )?.socketId;
-            if (ownerSocketId) {
-              io.to(ownerSocketId).emit("game:pending_optional_effect", {
-                effect: first,
-              });
-            }
-          }
+          notifyPendingEffect(room, io);
 
           io.to(gameId).emit("game:update", room.gameState);
         } catch (error: any) {
@@ -542,13 +534,106 @@ export function registerSocket(io: Server): void {
             targetInstanceId,
           );
           console.log("ataque declarado: ", room.gameState);
+          // step=declare → [attacking] e [attacked] já foram disparados
+          notifyPendingEffect(room, io);
           io.to(gameId).emit("game:update", room.gameState);
+
+          if (targetInstanceId) {
+            const oponent = getOpponentConnection(room, playerId);
+            const effects = hasAttackedEffects(
+              room.gameState,
+              targetInstanceId,
+            );
+            console.log("oponente attacked:", oponent);
+            console.log("effects attacked:", effects);
+            if (oponent && effects) {
+              console.log("disparou prompt_attacked");
+              io.to(oponent.socketId).emit("game:prompt_attacked", {
+                gameId,
+                attackerInstanceId,
+                targetInstanceId,
+              });
+            }
+          }
         } catch (error: any) {
           console.log(error);
           socket.emit("error", { message: error.message });
         }
       },
     );
+
+    socket.on("action:resolve_attacked", (data: { gameId: string }) => {
+      const { gameId } = data;
+
+      console.log("action:resolve_attacked", data);
+
+      const room = getRoom(gameId);
+
+      if (!room) return socket.emit("error", { message: "Jogo não iniciado." });
+
+      const { gameState } = room;
+
+      if (!gameState)
+        return socket.emit("error", {
+          message: "Não foi possivel encontrar o jogo.",
+        });
+      const { battle } = gameState;
+
+      if (!battle)
+        return socket.emit("error", {
+          message: "Você só pode tomar essa ação durante a batalha.",
+        });
+
+      const { targetInstanceId } = battle;
+
+      if (!targetInstanceId)
+        return socket.emit("error", {
+          message: "Não há alvo de ataque para ativar efeitos.",
+        });
+
+      const playerId = findPlayerIdBySocket(room, socket.id);
+
+      if (!playerId)
+        return socket.emit("error", { message: "Jogo não iniciado." });
+
+      try {
+        attacked(gameState);
+        console.log("resolvendo attacked: ", room.gameState);
+        // step=battling → [blocking] e [battling] já foram disparados
+        notifyPendingEffect(room, io);
+        io.to(gameId).emit("game:update", room.gameState);
+      } catch (error: any) {
+        console.log(error);
+        socket.emit("error", { message: error.message });
+      }
+    });
+
+    socket.on("action:skip_attacked", (data: { gameId: string }) => {
+      const { gameId } = data;
+
+      console.log("action:skip_attacked", data);
+
+      const room = getRoom(gameId);
+
+      if (!room?.gameState)
+        return socket.emit("error", { message: "Jogo não iniciado." });
+
+      const playerId = findPlayerIdBySocket(room, socket.id);
+
+      if (!playerId)
+        return socket.emit("error", { message: "Jogo não iniciado." });
+
+      try {
+        skipAttacked(room.gameState, playerId);
+        console.log("bloqueio pulado: ", room.gameState);
+        // step=battling → [battling] já foi disparado
+        notifyPendingEffect(room, io);
+        io.to(gameId).emit("game:update", room.gameState);
+      } catch (error: any) {
+        console.log(error);
+        socket.emit("error", { message: error.message });
+      }
+    });
 
     socket.on(
       "action:declare_block",
@@ -570,6 +655,8 @@ export function registerSocket(io: Server): void {
         try {
           declareBlock(room.gameState, playerId, blockerInstanceId);
           console.log("bloqueio declarado: ", room.gameState);
+          // step=battling → [blocking] e [battling] já foram disparados
+          notifyPendingEffect(room, io);
           io.to(gameId).emit("game:update", room.gameState);
         } catch (error: any) {
           console.log(error);
@@ -598,6 +685,8 @@ export function registerSocket(io: Server): void {
         try {
           skipBlocking(room.gameState, playerId);
           console.log("bloqueio pulado: ", room.gameState);
+          // step=battling → [battling] já foi disparado
+          notifyPendingEffect(room, io);
           io.to(gameId).emit("game:update", room.gameState);
         } catch (error: any) {
           console.log(error);
@@ -624,6 +713,8 @@ export function registerSocket(io: Server): void {
       try {
         resolveCombatDamage(room.gameState);
         console.log("batalha resolvida: ", room.gameState);
+        // step=after_battle → [after_attacking] e [after_attacked] já foram disparados
+        notifyPendingEffect(room, io);
         io.to(gameId).emit("game:update", room.gameState);
       } catch (error: any) {
         console.log(error);
@@ -686,35 +777,42 @@ export function registerSocket(io: Server): void {
         const { gameId, accept, targetInstanceId } = data;
 
         console.log("action:resolve_optional_effect", data);
+        console.log("action:resolve_optional_effect", data);
 
         const room = getRoom(gameId);
 
         if (!room?.gameState)
           return socket.emit("error", { message: "Jogo não iniciado." });
+        const state = room.gameState;
 
-        const playerId = findPlayerIdBySocket(room, socket.id);
+        const effects = state.pendingOptionalEffects;
+        if (!effects || effects.length <= 0)
+          return socket.emit("error", { message: "Não há efeitos." });
+
+        const playerId = effects[0].ownerId;
 
         if (!playerId)
           return socket.emit("error", { message: "Jogador não encontrado." });
 
-        const state = room.gameState;
-
-        const pendingIdx =
-          state.pendingOptionalEffects?.findIndex(
-            (e) => e.ownerId === playerId,
-          ) ?? -1;
-
-        if (pendingIdx === -1)
-          return socket.emit("error", { message: "Nenhum efeito pendente." });
-
-        const [effect] = state.pendingOptionalEffects!.splice(pendingIdx, 1);
+        const [effect] = effects.splice(0, 1);
 
         if (accept) {
+          console.log(
+            "resultado: ",
+            effect.requiresTarget && !targetInstanceId,
+          );
+          console.log("targetInstanceId: ", targetInstanceId);
+
+          console.log("effect.requiresTarget: ", effect.requiresTarget);
+          if (effect.requiresTarget && !targetInstanceId)
+            throw new Error("Você deve enviar o alvo.");
+
           const entry: StackEntry = {
             id: `opt-${Date.now()}`,
             sourceInstanceId: effect.sourceInstanceId,
             ownerId: effect.ownerId,
             trigger: effect.trigger,
+            targetFilter: effect.targetFilter,
             effectSpeed: effect.effectSpeed,
             params: {
               ...effect.params,
@@ -769,9 +867,35 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "UNKNOWN_ERROR";
 }
 
+/**
+ * Se houver efeitos opcionais pendentes, notifica o dono do primeiro via socket.
+ */
+function notifyPendingEffect(room: GameRoom, io: Server): void {
+  const pending = room.gameState?.pendingOptionalEffects;
+  if (!pending || pending.length === 0) return;
+
+  const first = pending[0];
+  const ownerSocketId = room.players.find(
+    (p) => p.playerId === first.ownerId,
+  )?.socketId;
+
+  if (ownerSocketId) {
+    io.to(ownerSocketId).emit("game:pending_optional_effect", {
+      effect: first,
+    });
+  }
+}
+
 function findPlayerIdBySocket(room: GameRoom, socketId: string): string | null {
   const player = room.players.find((p) => p.socketId === socketId);
   return player?.playerId ?? null;
+}
+
+function getOpponentConnection(
+  room: GameRoom,
+  playerId: string,
+): PlayerConnection | null {
+  return room.players.find((p) => p.playerId !== playerId) ?? null;
 }
 
 function findPlayerById(room: GameRoom, id: string): PlayerConnection | null {

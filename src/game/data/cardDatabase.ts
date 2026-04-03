@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────
 
 import { generateId } from "../../utils/ids";
-import type { CardInstance } from "../gameTypes";
+import type { CardInstance, EffectTarget } from "../gameTypes";
 
 // ══════════════════════════════════════════════════════════
 //  TIPOS (espelhados do front — mantenha em sync)
@@ -35,6 +35,7 @@ export type EffectTrigger =
   | "battling"
   | "blocking"
   | "played"
+  | "evolving"
   | "end_of_turn"
   | "main_phase"
   | "either_turn"
@@ -94,16 +95,16 @@ export type FastTimingWindow =
   | "on_block_declared";
 
 // ── Tipos de alvo para o front-end (onde procurar alvos) ───
-export type TargetZone =
-  | "opponent_farm"
-  | "own_farm"
-  | "opponent_battle"
-  | "own_battle"
-  | "opponent_hand"
-  | "own_hand"
-  | "opponent_trash"
-  | "own_trash"
-  | "any";
+// export type TargetZone =
+//   | "opponent_farm"
+//   | "own_farm"
+//   | "opponent_battle"
+//   | "own_battle"
+//   | "opponent_hand"
+//   | "own_hand"
+//   | "opponent_trash"
+//   | "own_trash"
+//   | "any";
 
 export type TargetCondition = "exhausted" | "active" | "any";
 
@@ -116,7 +117,7 @@ type EffectCondition =
   | null;
 
 export interface CardEffect {
-  trigger: EffectTrigger;
+  trigger: EffectTrigger[];
   action: EffectAction;
 
   // ── Classificação do efeito ───────────────────
@@ -129,10 +130,10 @@ export interface CardEffect {
   value?: number;
   description: string;
   optional?: boolean;
-  requiresTarget?: boolean;
+  requiresTarget: boolean;
   condition?: EffectCondition;
   // Informações que o front-end usa para abrir a UI de seleção de alvo
-  targetZones?: TargetZone[]; // zonas onde procurar os alvos (ex.: opponent_farm)
+  targetZones?: EffectTarget[]; // zonas onde procurar os alvos (ex.: opponent_farm)
   targetFilter?: TargetCondition; // filtra por exausto/ativo/qualquer
   maxTargets?: number; // máximo de alvos que o jogador pode escolher
 }
@@ -197,9 +198,12 @@ const templates: CardTemplate[] = [
     description: "Allied monsters gain 10 HP.",
     effects: [
       {
-        trigger: "continuous",
+        trigger: ["continuous"],
         action: "allied_monsters_gain_hp",
         speed: "trigger",
+        requiresTarget: true,
+        condition: "always",
+        optional: false,
         value: 10,
         description: "[Continuous] Allied monsters gain 10 HP.",
       },
@@ -214,10 +218,13 @@ const templates: CardTemplate[] = [
       "When you play a monster from your Farm, you may Exhaust this card, then draw 1 card.",
     effects: [
       {
-        trigger: "main_phase",
+        trigger: ["main_phase"],
         action: "draw_on_monster_played_from_farm",
         speed: "trigger",
+        requiresTarget: false,
         value: 1,
+        optional: true,
+        condition: "always",
         description:
           "[Main Phase] When you play a monster from your Farm, you may Exhaust this card, then draw 1 card.",
       },
@@ -225,6 +232,26 @@ const templates: CardTemplate[] = [
   },
 
   // ── Monstros — Basic Pack ────────────────────────────────
+  {
+    id: "mon_kuropyro",
+    name: "Kuropyro",
+    type: "monster",
+    subtype: "Demon",
+    description: "Demônio imponente que força o oponente a atacá-lo.",
+    hp: 30,
+    ap: 40,
+    playCost: 1,
+    effects: [
+      {
+        trigger: ["taunt_while_exhausted"],
+        action: "taunt_while_exhausted",
+        speed: "trigger",
+        requiresTarget: false,
+        description:
+          "[Taunt] (While Exhausted, this monster has priority as the target for your opponent's attacks.)",
+      },
+    ],
+  },
   {
     id: "mon_yamigni",
     name: "Yamigni",
@@ -234,18 +261,22 @@ const templates: CardTemplate[] = [
     hp: 50,
     ap: 70,
     playCost: 3,
+    evoCost: 1,
+    evolvesFrom: "mon_kuropyro",
     effects: [
       {
-        trigger: "taunt_while_exhausted",
+        trigger: ["taunt_while_exhausted"],
         action: "taunt_while_exhausted",
         speed: "trigger",
+        requiresTarget: false,
         description:
           "[Taunt] (While Exhausted, this monster has priority as the target for your opponent's attacks.)",
       },
       {
-        trigger: "attacked",
+        trigger: ["attacked"],
         action: "destroy_opponent_farm_exhausted",
         speed: "trigger",
+        requiresTarget: true,
         description:
           "[Attacked] You may destroy 1 Exhausted card in your opponent's Farm.",
       },
@@ -262,9 +293,10 @@ const templates: CardTemplate[] = [
     playCost: 2,
     effects: [
       {
-        trigger: "played",
+        trigger: ["played"],
         action: "copy_highest_ap",
         speed: "trigger",
+        requiresTarget: false,
         description:
           "[Played] You may make this monster's AP become equal to the AP of 1 enemy monster with the highest AP.",
       },
@@ -281,9 +313,12 @@ const templates: CardTemplate[] = [
     playCost: 2,
     effects: [
       {
-        trigger: "attacking",
+        trigger: ["attacking"],
         action: "lock_opponent_farm_card",
         speed: "trigger",
+        requiresTarget: true,
+        targetZones: ["opponent_farm"],
+        targetFilter: "any",
         description:
           "[Attacking] You may make 1 card in your opponent's Farm unable to become Exhausted until the end of their turn.",
       },
@@ -300,9 +335,10 @@ const templates: CardTemplate[] = [
     playCost: 1,
     effects: [
       {
-        trigger: "battling",
+        trigger: ["battling"],
         action: "reduce_damage_per_active_farm",
         speed: "trigger",
+        requiresTarget: false,
         value: 10,
         description:
           "[Battling] Reduce the damage this monster receives by this battle by 10 for each Active card in your Farm.",
@@ -320,9 +356,14 @@ const templates: CardTemplate[] = [
     playCost: 1,
     effects: [
       {
-        trigger: "played",
+        trigger: ["played"],
         action: "ally_gain_ap",
+        requiresTarget: true,
+        targetFilter: "any",
+        condition: "always",
+        optional: true,
         speed: "trigger",
+        targetZones: ["own_battle", "own_main"],
         value: 20,
         description:
           "[Played] You may make 1 allied monster gain 20 AP during this turn.",
@@ -340,8 +381,9 @@ const templates: CardTemplate[] = [
     playCost: 1,
     effects: [
       {
-        trigger: "blocker",
+        trigger: ["blocker"],
         action: "play_from_hand_as_blocker",
+        requiresTarget: false,
         speed: "fast",
         fastType: "timed",
         fastTiming: ["on_attack_declared"],
@@ -361,9 +403,10 @@ const templates: CardTemplate[] = [
     playCost: 1,
     effects: [
       {
-        trigger: "either_turn",
+        trigger: ["either_turn"],
         action: "draw_on_healed",
         speed: "trigger",
+        requiresTarget: false,
         oncePerTurn: true,
         value: 1,
         description:
@@ -372,8 +415,8 @@ const templates: CardTemplate[] = [
     ],
   },
   {
-    id: "mon_peacock",
-    name: "Peacock",
+    id: "mon_pearcock",
+    name: "Pearcock",
     type: "monster",
     subtype: "Bird",
     hp: 30,
@@ -384,15 +427,46 @@ const templates: CardTemplate[] = [
       "https://drive.google.com/file/d/1BRUEDa_9B-CdMdMnRJcVmfRsInlPFjQ2/view?usp=sharing",
     effects: [
       {
-        trigger: "played",
+        trigger: ["played"],
         action: "deal_damage_to_all_battle_zone",
         speed: "trigger",
         optional: true,
+        targetFilter: "any",
+        targetZones: ["opponent_battle"],
         requiresTarget: false,
         condition: "always",
         value: 10,
         description:
           "[Played] Causa 10 de danos à todos os monstros do oponente.",
+      },
+    ],
+  },
+  {
+    id: "mon_feathance",
+    name: "Feathance",
+    type: "monster",
+    subtype: "Bird",
+    hp: 90,
+    description: "",
+    ap: 70,
+    playCost: 4,
+    evoCost: 1,
+    evolvesFrom: "mon_pearcock",
+    image:
+      "https://drive.google.com/file/d/1BRUEDa_9B-CdMdMnRJcVmfRsInlPFjQ2/view?usp=sharing",
+    effects: [
+      {
+        trigger: ["attacking"],
+        action: "deal_damage_to_all_battle_zone",
+        speed: "trigger",
+        targetFilter: "any",
+        targetZones: ["opponent_battle"],
+        optional: true,
+        requiresTarget: false,
+        condition: "always",
+        value: 10,
+        description:
+          "[Attacking] Causa 10 de danos à todos os monstros do oponente.",
       },
     ],
   },
@@ -407,10 +481,11 @@ const templates: CardTemplate[] = [
     playCost: 1,
     effects: [
       {
-        trigger: "attacked",
+        trigger: ["attacked"],
         action: "cease_attack",
         speed: "fast",
         fastType: "response",
+        requiresTarget: false,
         interaction: true,
         oncePerTurn: true,
         description: "[Attacked] [Once per turn] You may cease this attack.",
@@ -429,17 +504,16 @@ const templates: CardTemplate[] = [
     playCost: 1,
     effects: [
       {
-        trigger: "attacked",
+        trigger: ["attacked"],
         action: "lock_attacker_until_refresh",
-        speed: "fast",
-        fastType: "response",
-        interaction: true,
+        speed: "trigger",
+        condition: "always",
         optional: true,
         description:
           "[Attacked] You may make the attacking monster unable to become Active until the end of your opponent's Refresh Phase.",
-        requiresTarget: true,
-        targetZones: ["opponent_battle"],
+        requiresTarget: false,
         targetFilter: "any",
+        targetZones: ["opponent_battle"],
         maxTargets: 1,
       },
     ],
@@ -455,9 +529,10 @@ const templates: CardTemplate[] = [
     playCost: 1,
     effects: [
       {
-        trigger: "end_of_turn",
+        trigger: ["end_of_turn"],
         action: "exhaust_draw",
         speed: "trigger",
+        requiresTarget: false,
         value: 1,
         description:
           "[End of your turn] You may Exhaust this monster, then draw 1 card.",
@@ -478,7 +553,7 @@ const templates: CardTemplate[] = [
     evoCost: 1,
     effects: [
       {
-        trigger: "played",
+        trigger: ["evolving", "played"],
         action: "exhaust_opponent_farm_card",
         speed: "trigger",
         optional: true,
@@ -486,13 +561,14 @@ const templates: CardTemplate[] = [
           "[Played] [Evolved] You may Exhaust 1 card in your opponent's Farm.",
         requiresTarget: true,
         targetZones: ["opponent_farm"],
-        targetFilter: "any",
+        targetFilter: "active",
         maxTargets: 1,
       },
       {
-        trigger: "attacking",
+        trigger: ["attacking"],
         action: "return_exhausted_opponent_farm_to_hand",
         speed: "trigger",
+        optional: true,
         description:
           "[Attacking] You can return 1 Exhausted card in your opponent's Farm to their hand.",
         requiresTarget: true,
@@ -513,9 +589,10 @@ const templates: CardTemplate[] = [
     playCost: 2,
     effects: [
       {
-        trigger: "farm",
+        trigger: ["farm"],
         action: "reduce_play_cost",
         speed: "trigger",
+        requiresTarget: false,
         value: 1,
         description: "[Farm] Reduce the cost to play this card by 1.",
       },
@@ -532,7 +609,7 @@ const templates: CardTemplate[] = [
     playCost: 1,
     effects: [
       {
-        trigger: "played",
+        trigger: ["played"],
         action: "unexhaust_allied_ice_monster",
         speed: "fast",
         fastType: "timed",
@@ -553,7 +630,7 @@ const templates: CardTemplate[] = [
     playCost: 1,
     effects: [
       {
-        trigger: "played",
+        trigger: ["played"],
         action: "deal_damage_to_target_active_monster",
         speed: "trigger",
         optional: false,
@@ -661,16 +738,15 @@ export interface DeckRecipe {
 
 /** Basic Pack — 50 cartas balanceadas */
 export const BASIC_PACK_DECK: DeckRecipe[] = [
-  { cardId: "mon_peacock", quantity: 8 },
+  { cardId: "mon_pearcock", quantity: 8 },
   { cardId: "mon_shinonion", quantity: 7 },
   { cardId: "mon_ninpola", quantity: 6 },
-  { cardId: "mon_karpaura", quantity: 6 },
+  { cardId: "mon_feathance", quantity: 9 },
   { cardId: "mon_cupetit", quantity: 4 },
-  { cardId: "mon_lilytle", quantity: 4 },
-  { cardId: "mon_crossky", quantity: 4 },
+  { cardId: "mon_kuropyro", quantity: 6 },
+  { cardId: "mon_yamigni", quantity: 6 },
   { cardId: "mon_liwigon", quantity: 4 },
-  { cardId: "mon_robille", quantity: 4 },
-  { cardId: "mon_yamigni", quantity: 3 },
+
   // Total: 8+7+6+6+4+4+4+4+4+3 = 50 ✅
 ];
 

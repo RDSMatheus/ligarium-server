@@ -84,12 +84,10 @@ export const EFFECT_HANDLERS: Record<string, EffectHandler> = {
   // params: { targetInstanceId } — attacker instance
   lock_attacker_until_refresh: (state, entry) => {
     const opp = getOpponentState(state, entry.ownerId);
-    const targetId = entry.params?.targetInstanceId;
-    if (!targetId) return;
+    const { battle } = state;
+    const attackerId = battle?.attackerInstanceId;
 
-    const target = [...opp.battleZone, ...opp.mainZone].find(
-      (c) => c.instanceId === targetId,
-    );
+    const target = opp.battleZone.find((c) => c.instanceId === attackerId);
     if (!target) return;
 
     // Marca para impedir que vire Active no próximo Refresh do dono
@@ -166,7 +164,9 @@ export function executeEffect(state: GameState, entry: StackEntry): void {
     if (!card) return;
 
     const template = getTemplateOrThrow(card.templateId);
-    const effect = template.effects?.find((e) => e.trigger === entry.trigger);
+    const effect = template.effects?.find((e) =>
+      e.trigger.includes(entry.trigger),
+    );
     if (!effect) return;
 
     const handler = EFFECT_HANDLERS[effect.action];

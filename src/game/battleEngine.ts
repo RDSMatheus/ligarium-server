@@ -1,7 +1,14 @@
+import { generateId } from "../utils/ids";
 import { openChain, pushToChain } from "./chainEngine";
 import { getTemplateOrThrow } from "./data/cardDatabase";
-import { openEffectWindow } from "./effectEngine";
-import { CardInstance, GameState, PlayerState } from "./gameTypes";
+import {
+  attackedEffects,
+  attackingEffects,
+  hasLegalTargets,
+  openEffectWindow,
+} from "./effectEngine";
+import { executeEffect } from "./effects";
+import { CardInstance, GameState, PlayerState, StackEntry } from "./gameTypes";
 import {
   getOpponentState,
   getPlayerState,
@@ -28,25 +35,30 @@ export function declareAttack(
   if (!attacker) throw new Error("Atacante não encontrado.");
   if (attacker.exhausted) throw new Error("Carta já exaurida.");
 
-  if (targetInstanceId) {
-    const opp = getOpponentState(state, playerId);
-    const hasTaunt = opp.battleZone.find((c) => {
-      const t = getTemplateOrThrow(c.templateId);
-      return (
-        c.exhausted &&
-        t.effects?.some((e) => e.action === "taunt_while_exhausted")
-      );
-    });
-    if (hasTaunt && targetInstanceId !== hasTaunt.instanceId)
-      throw new Error("Você deve atacar o monstro com [Taunt].");
+  const opp = getOpponentState(state, playerId);
+  const hasTaunt = opp.battleZone.find((c) => {
+    const t = getTemplateOrThrow(c.templateId);
+    return (
+      c.exhausted &&
+      t.effects?.some((e) => e.action === "taunt_while_exhausted")
+    );
+  });
 
-    if (!opp.battleZone.find((c) => c.instanceId === targetInstanceId))
-      throw new Error("Alvo não encontrado.");
-  }
+  if (hasTaunt && !targetInstanceId)
+    throw new Error("Você deve atacar o monstro com [Taunt].");
+
+  if (hasTaunt && targetInstanceId !== hasTaunt.instanceId)
+    throw new Error("Você deve atacar o monstro com [Taunt].");
+
+  if (
+    targetInstanceId &&
+    !opp.battleZone.find((c) => c.instanceId === targetInstanceId)
+  )
+    throw new Error("Alvo não encontrado.");
 
   attacker.exhausted = true;
   state.battle = {
-    step: "declare",
+    step: "attacking",
     attackerPlayerId: playerId,
     attackerInstanceId,
     targetInstanceId,
@@ -58,18 +70,132 @@ export function declareAttack(
   openChain(state, playerId, "on_attack_declared", attackerInstanceId);
 
   const template = getTemplateOrThrow(attacker.templateId);
-  const attackingEffect = template.effects?.find(
-    (e) => e.trigger === "attacking",
-  );
-  if (attackingEffect) {
-    pushToChain(state, {
-      sourceInstanceId: attackerInstanceId,
-      ownerId: playerId,
-      trigger: "attacking",
-      effectSpeed: attackingEffect.speed ?? "trigger",
-      interaction: attackingEffect.interaction,
-    });
+  const attackingEffect = attackingEffects(template);
+  if (attackingEffect.length === 0) return;
+
+  for (const effect of attackingEffect) {
+    if (effect.optional) {
+      state.pendingOptionalEffects ??= [];
+      state.pendingOptionalEffects.push({
+        action: effect.action,
+        ownerId: playerId,
+        effectSpeed: effect.speed,
+        targetFilter: effect.targetFilter,
+        targetZone: effect.targetZones ? effect.targetZones : null,
+        requiresTarget: effect.requiresTarget,
+        sourceInstanceId: attacker.instanceId,
+        trigger: "attacking",
+        params: {
+          value: effect.value,
+        },
+      });
+    } else {
+      const entry: StackEntry = {
+        id: generateId("fx_"),
+        ownerId: playerId,
+        sourceInstanceId: attacker.instanceId,
+        trigger: "attacking",
+        effectSpeed: "trigger",
+        params: { value: effect.value },
+        resolved: false,
+      };
+      executeEffect(state, entry);
+    }
   }
+}
+
+export function hasAttackedEffects(state: GameState, targetInstanceId: string) {
+  if (!state || !targetInstanceId)
+    throw new Error("GameState ou alvo não enviado");
+
+  const ownerPs = state.playerStates.find((ps) =>
+    ps.battleZone.some((c) => c.instanceId === targetInstanceId),
+  );
+  if (!ownerPs) throw new Error("Jogador não encontrado");
+
+  const target = ownerPs.battleZone.find(
+    (c) => c.instanceId === targetInstanceId,
+  );
+  if (!target) throw new Error("Alvo de ataque não encontrado");
+
+  const tpl = getTemplateOrThrow(target.templateId);
+  const effects = attackedEffects(tpl);
+
+  console.log("template effects: ", tpl.effects);
+
+  const hasActivatable = effects.some((f) =>
+    hasLegalTargets(f, state, ownerPs.playerId),
+  );
+
+  if (!hasActivatable) return false;
+  return true;
+}
+
+export function attacked(state: GameState) {
+  if (!state.battle) throw new Error("Não há batalha ativa.");
+  if (state.battle.step !== "attacking")
+    throw new Error("Momento inválido para attacked.");
+
+  const { targetInstanceId } = state.battle;
+  if (!targetInstanceId) return null;
+
+  const ownerPs = findOwner(state, targetInstanceId);
+
+  if (!ownerPs)
+    throw new Error("Não foi possivel encontrar o dono do alvo dessa batalha");
+
+  const target = ownerPs.battleZone.find(
+    (c) => c.instanceId === targetInstanceId,
+  );
+
+  if (!target) throw new Error("Alvo de ataque não encontrado");
+
+  const template = getTemplateOrThrow(target.templateId);
+  const attackedEffect = attackedEffects(template);
+
+  state.battle.step = "blocking";
+
+  if (attackedEffect.length === 0) return;
+
+  for (const effect of attackedEffect) {
+    if (effect.optional) {
+      state.pendingOptionalEffects ??= [];
+      state.pendingOptionalEffects.push({
+        action: effect.action,
+        ownerId: ownerPs.playerId,
+        effectSpeed: effect.speed,
+        targetFilter: effect.targetFilter,
+        targetZone: effect.targetZones ? effect.targetZones : null,
+        requiresTarget: effect.requiresTarget,
+        sourceInstanceId: target.instanceId,
+        trigger: "attacked",
+        params: {
+          value: effect.value,
+        },
+      });
+    } else {
+      const entry: StackEntry = {
+        id: generateId("fx_"),
+        ownerId: ownerPs.playerId,
+        sourceInstanceId: target.instanceId,
+        trigger: "attacked",
+        effectSpeed: "trigger",
+        params: { value: effect.value },
+        resolved: false,
+      };
+      executeEffect(state, entry);
+    }
+  }
+}
+
+export function skipAttacked(state: GameState, playerId: string) {
+  const ps = getPlayerState(state, playerId);
+
+  if (!state.battle) throw new Error("Não há batalha ativa.");
+  if (state.battle.step !== "attacking")
+    throw new Error("Não há janela de [Attacked]");
+
+  state.battle.step = "blocking";
 }
 
 export function declareBlock(
@@ -81,7 +207,7 @@ export function declareBlock(
   const blocker = ps.battleZone.find((c) => c.instanceId === blockerInstanceId);
   if (!state.battle) throw new Error("Não há batalha ativa.");
 
-  if (state.battle.step !== "declare")
+  if (state.battle.step !== "blocking")
     throw new Error("Momento inválido para bloquear.");
 
   if (!blocker) throw new Error("Bloqueador não encontrado na battleZone.");
@@ -91,17 +217,17 @@ export function declareBlock(
   blocker.exhausted = true;
   state.battle.blockerInstanceId = blockerInstanceId;
 
-  state.battle.step = "damage";
+  state.battle.step = "battling";
 }
 
 export function skipBlocking(state: GameState, playerId: string) {
   const ps = getPlayerState(state, playerId);
 
   if (!state.battle) throw new Error("Não há batalha ativa.");
-  if (state.battle.step !== "declare")
+  if (state.battle.step !== "blocking")
     throw new Error("Não há janela de bloqueio");
 
-  state.battle.step = "damage";
+  state.battle.step = "battling";
 }
 
 export function resolveCombatDamage(state: GameState) {
@@ -224,3 +350,12 @@ export function getCurrentAp(card: CardInstance): number {
 
   return Math.max(0, base + total); // AP nunca abaixo de 0
 }
+
+export const findOwner = (state: GameState, cardId: string) => {
+  const ownerPs = state.playerStates.find((ps) =>
+    ps.battleZone.some((c) => c.instanceId === cardId),
+  );
+  if (!ownerPs) throw new Error("Jogador não encontrado");
+
+  return ownerPs;
+};
