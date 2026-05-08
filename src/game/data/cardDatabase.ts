@@ -14,19 +14,29 @@ import type { CardInstance, EffectTarget } from "../gameTypes";
 
 export type CardType = "monster" | "spell" | "terrain";
 
-export type CardTribe =
-  | "Demon"
+export type MonsterType =
+  | "Insect"
+  | "Plant"
   | "Dragon"
+  | "Machine"
+  | "Bird"
+  | "Fairy"
   | "Beast"
   | "Aquan"
-  | "Bird"
-  | "Insect"
-  | "Fish"
-  | "Fairy"
-  | "Plant"
-  | "Machine"
+  | "Reptile"
+  | "Demon"
+  | "Fish";
+
+export type Attribute =
+  | "Fire"
+  | "Electric"
+  | "Wind"
+  | "Water"
+  | "Nature"
+  | "Stone"
+  | "Iron"
   | "Ice"
-  | "None";
+  | "Light";
 
 export type EffectTrigger =
   | "taunt_while_exhausted"
@@ -142,7 +152,8 @@ export interface CardTemplate {
   id: string;
   name: string;
   type: CardType;
-  subtype?: CardTribe;
+  subtype?: MonsterType;
+  attribute: Attribute;
   description: string;
   hp?: number;
   ap?: number;
@@ -164,28 +175,28 @@ const templates: CardTemplate[] = [
     id: "terrain_forest",
     name: "Floresta Ancestral",
     type: "terrain",
-    subtype: "None",
+    attribute: "Nature",
     description: "Uma floresta densa cheia de vida.",
   },
   {
     id: "terrain_volcano",
     name: "Vulcão Ardente",
     type: "terrain",
-    subtype: "None",
+    attribute: "Fire",
     description: "Lava escorrendo pelas encostas.",
   },
   {
     id: "terrain_ocean",
     name: "Oceano Profundo",
     type: "terrain",
-    subtype: "None",
+    attribute: "Water",
     description: "Águas escuras e misteriosas.",
   },
   {
     id: "terrain_mountain",
     name: "Montanha Sagrada",
     type: "terrain",
-    subtype: "None",
+    attribute: "Water",
     description: "Picos gelados tocando as nuvens.",
   },
 
@@ -194,7 +205,7 @@ const templates: CardTemplate[] = [
     id: "terrain_heavens_fountain",
     name: "Heaven's Fountain",
     type: "terrain",
-    subtype: "None",
+    attribute: "Water",
     description: "Allied monsters gain 10 HP.",
     effects: [
       {
@@ -213,7 +224,7 @@ const templates: CardTemplate[] = [
     id: "terrain_ironspine_plains",
     name: "Ironspine Plains",
     type: "terrain",
-    subtype: "None",
+    attribute: "Iron",
     description:
       "When you play a monster from your Farm, you may Exhaust this card, then draw 1 card.",
     effects: [
@@ -238,6 +249,7 @@ const templates: CardTemplate[] = [
     type: "monster",
     subtype: "Demon",
     description: "Demônio imponente que força o oponente a atacá-lo.",
+    attribute: "Fire",
     hp: 30,
     ap: 40,
     playCost: 1,
@@ -258,6 +270,7 @@ const templates: CardTemplate[] = [
     type: "monster",
     subtype: "Demon",
     description: "Demônio imponente que força o oponente a atacá-lo.",
+    attribute: "Fire",
     hp: 50,
     ap: 70,
     playCost: 3,
@@ -288,6 +301,7 @@ const templates: CardTemplate[] = [
     type: "monster",
     subtype: "Dragon",
     description: "Copia o poder do monstro inimigo mais forte.",
+    attribute: "Water",
     hp: 40,
     ap: 10,
     playCost: 2,
@@ -308,6 +322,7 @@ const templates: CardTemplate[] = [
     type: "monster",
     subtype: "Beast",
     description: "Tranca um terreno do oponente ao atacar.",
+    attribute: "Ice",
     hp: 40,
     ap: 50,
     playCost: 2,
@@ -330,6 +345,7 @@ const templates: CardTemplate[] = [
     type: "monster",
     subtype: "Aquan",
     description: "Reduz o dano recebido baseado nos terrenos ativos.",
+    attribute: "Electric",
     hp: 40,
     ap: 30,
     playCost: 1,
@@ -351,6 +367,7 @@ const templates: CardTemplate[] = [
     type: "monster",
     subtype: "Bird",
     description: "Concede poder extra a um aliado quando entra em campo.",
+    attribute: "Wind",
     hp: 40,
     ap: 30,
     playCost: 1,
@@ -376,6 +393,7 @@ const templates: CardTemplate[] = [
     type: "monster",
     subtype: "Insect",
     description: "Pode ser jogado da mão como bloqueador ao custo normal.",
+    attribute: "Nature",
     hp: 30,
     ap: 30,
     playCost: 1,
@@ -397,6 +415,7 @@ const templates: CardTemplate[] = [
     name: "Karpaura",
     type: "monster",
     subtype: "Fish",
+    attribute: "Water",
     description: "Compra uma carta sempre que for curado.",
     hp: 40,
     ap: 40,
@@ -419,6 +438,7 @@ const templates: CardTemplate[] = [
     name: "Pearcock",
     type: "monster",
     subtype: "Bird",
+    attribute: "Iron",
     hp: 30,
     description: "",
     ap: 40,
@@ -446,6 +466,7 @@ const templates: CardTemplate[] = [
     name: "Feathance",
     type: "monster",
     subtype: "Bird",
+    attribute: "Iron",
     hp: 90,
     description: "",
     ap: 70,
@@ -476,6 +497,7 @@ const templates: CardTemplate[] = [
     type: "monster",
     subtype: "Fairy",
     description: "Pode cancelar um ataque recebido uma vez por turno.",
+    attribute: "Light",
     hp: 30,
     ap: 20,
     playCost: 1,
@@ -497,6 +519,7 @@ const templates: CardTemplate[] = [
     name: "Shinonion",
     type: "monster",
     subtype: "Plant",
+    attribute: "Nature",
     description:
       "[Attacked] You may make the attacking monster unable to become Active until the end of your opponent's Refresh Phase.",
     hp: 30,
@@ -524,6 +547,7 @@ const templates: CardTemplate[] = [
     type: "monster",
     subtype: "Plant",
     description: "Exaure-se no fim do turno para comprar uma carta.",
+    attribute: "Nature",
     hp: 30,
     ap: 20,
     playCost: 1,
@@ -544,6 +568,7 @@ const templates: CardTemplate[] = [
     name: "Ninpola",
     type: "monster",
     subtype: "Plant",
+    attribute: "Nature",
     description:
       "[Played] [Evolved] You may Exhaust 1 card in your opponent's Farm. [Attacking] You can return 1 Exhausted card in your opponent's Farm to their hand.",
     hp: 60,
@@ -583,6 +608,7 @@ const templates: CardTemplate[] = [
     name: "Robille",
     type: "monster",
     subtype: "Machine",
+    attribute: "Iron",
     description: "Terrenos reduzem o custo para jogar esta carta.",
     hp: 40,
     ap: 40,
@@ -604,6 +630,7 @@ const templates: CardTemplate[] = [
     id: "spell_snowdrift_stand",
     name: "Snowdrift Stand",
     type: "spell",
+    attribute: "Ice",
     description:
       "[Fast] [Played] When an opponent's monster attacks, make 1 Exhausted allied Ice monster become Active.",
     playCost: 1,
@@ -626,6 +653,7 @@ const templates: CardTemplate[] = [
     id: "spell_shadow_sneak",
     name: "Shadow Sneak",
     type: "spell",
+    attribute: "Ice",
     description: "[Played] Cause 40 damage to 1 Active enemy monster.",
     playCost: 1,
     effects: [
@@ -640,58 +668,6 @@ const templates: CardTemplate[] = [
         description: "[Played] Cause 40 damage to 1 Active enemy monster.",
       },
     ],
-  },
-
-  // ── Monstros legado ──────────────────────────────────────
-  {
-    id: "mon_wolf",
-    name: "Lobo das Sombras",
-    type: "monster",
-    subtype: "Beast",
-    description: "Predador ágil que caça em matilha.",
-    hp: 3,
-    ap: 2,
-    playCost: 1,
-  },
-  {
-    id: "mon_golem",
-    name: "Golem de Pedra",
-    type: "monster",
-    subtype: "None",
-    description: "Lento mas muito resistente.",
-    hp: 6,
-    ap: 2,
-    playCost: 2,
-  },
-  {
-    id: "mon_drake",
-    name: "Drake Jovem",
-    type: "monster",
-    subtype: "Dragon",
-    description: "Um dragão em treinamento.",
-    hp: 4,
-    ap: 4,
-    playCost: 2,
-  },
-  {
-    id: "mon_sprite",
-    name: "Sprite da Floresta",
-    type: "monster",
-    subtype: "None",
-    description: "Pequeno mas traiçoeiro.",
-    hp: 2,
-    ap: 1,
-    playCost: 1,
-  },
-  {
-    id: "mon_serpent",
-    name: "Serpente de Lava",
-    type: "monster",
-    subtype: "None",
-    description: "Ataque devastador vindo do magma.",
-    hp: 5,
-    ap: 5,
-    playCost: 3,
   },
 ];
 
@@ -723,7 +699,7 @@ export function getTemplatesByType(type: CardType): CardTemplate[] {
   return templates.filter((t) => t.type === type);
 }
 
-export function getTemplatesByTribe(subtype: CardTribe): CardTemplate[] {
+export function getTemplatesByTribe(subtype: MonsterType): CardTemplate[] {
   return templates.filter((t) => t.subtype === subtype);
 }
 

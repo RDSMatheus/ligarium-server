@@ -92,7 +92,7 @@ export interface CardTemplate {
   description: string;
 
   subtype?: string;
-
+  attribute?: string;
   hp?: number;
   ap?: number;
   playCost?: number;

@@ -527,6 +527,11 @@ export function registerSocket(io: Server): void {
           return socket.emit("error", { message: "Jogo não iniciado." });
 
         try {
+          executeMoveMonsterToBattle(
+            room.gameState,
+            playerId,
+            attackerInstanceId,
+          );
           declareAttack(
             room.gameState,
             playerId,

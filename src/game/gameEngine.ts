@@ -73,6 +73,11 @@ export function executePlayMonsterCardFromHand(
     ps.hand.map((c) => c.instanceId),
   );
 
+  const monsterCap = isMaxMonstersCap(ps);
+  console.log(monsterCap);
+
+  if (monsterCap) throw new Error("Número máximo de monstros em campo");
+
   const cardIndex = ps.hand.findIndex((c) => c.instanceId === cardInstanceId);
   if (cardIndex === -1) throw new Error("Carta não encontrada");
 
@@ -164,10 +169,6 @@ export function executeEvolveMonsterCardFromHand(
     "mão do jogador:",
     ps.hand.map((c) => c.instanceId),
   );
-
-  const monsterCap = isMaxMonstersCap(ps);
-
-  if (monsterCap) throw new Error("Número máximo de monstros em campo");
 
   const evoCardIndex = ps.hand.findIndex((c) => c.instanceId === evoInstanceId);
   if (evoCardIndex === -1) throw new Error("Evolução não encontrada");
@@ -405,6 +406,6 @@ function findPreEvoOnField(
 
 function isMaxMonstersCap(ps: PlayerState) {
   const max = [...ps.battleZone, ...ps.battleZone];
-  if ((max.length = 4)) return true;
+  if (max.length === 4) return true;
   return false;
 }

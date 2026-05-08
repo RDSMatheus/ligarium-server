@@ -123,7 +123,7 @@ export const EFFECT_HANDLERS: Record<string, EffectHandler> = {
 
     const template = getTemplateOrThrow(target.templateId);
     // Valida que é um monstro Ice aliado e está exausto
-    if (template.subtype !== "Ice") return;
+    if (template.attribute !== "Ice") return;
     if (!target.exhausted) return;
 
     target.exhausted = false;
